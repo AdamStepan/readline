@@ -9,13 +9,17 @@ class Readline {};
 
 struct EscapeSequence {
     static const std::string ClearTheScreen;
+    static const std::string MoveCursorBackward;
+    static const std::string MoveCursorForward;
 };
 
 using namespace std::literals;
 
 const std::string EscapeSequence::ClearTheScreen{"\x1b[2J"s};
+const std::string EscapeSequence::MoveCursorBackward{"\x1b[1D"s};
+const std::string EscapeSequence::MoveCursorForward{"\x1b[1C"s};
 
-class Terminal {
+class TerminalSettings {
     private:
         termios original_ = get_terminal_attr();
         termios current_ = get_terminal_attr();
@@ -39,56 +43,93 @@ class Terminal {
         }
 
     public:
-        ~Terminal() {
-            // NOTE: this will abort program if an exception occured
+        void apply() const {
+            set_terminal_attr(current_);
+        }
+
+        void reset() {
             set_terminal_attr(original_);
+            current_ = original_;
         }
 
-        void set_echo(bool to) {
+        TerminalSettings &set_echo(bool to) {
             current_.c_lflag &= to ? ECHO : ~ECHO;
-            set_terminal_attr(current_);
+            return *this;
         }
 
-        void set_canonical(bool to) {
+        TerminalSettings &set_canonical(bool to) {
             current_.c_lflag &= to ? ICANON : ~ICANON;
-            set_terminal_attr(current_);
+            return *this;
         }
 
-        void set_min_chars_for_canonical_read(size_t n) {
+        TerminalSettings &set_min_chars_for_non_canonical_read(size_t n) {
             current_.c_cc[VMIN] = n;
-            set_terminal_attr(current_);
+            return *this;
         }
 
-        void set_timeout_for_non_canonical_read(size_t n) {
+        TerminalSettings &set_timeout_for_non_canonical_read(size_t n) {
             current_.c_cc[VTIME] = n;
-            set_terminal_attr(current_);
+            return *this;
         }
 
-        void set_ctrlc_ctrlz_as_characters(bool to) {
+        TerminalSettings &set_ctrlc_ctrlz_as_characters(bool to) {
             current_.c_lflag &= to ? ~ISIG : ISIG;
-            set_terminal_attr(current_);
-
+            return *this;
         }
 
-        static Terminal raw() {
-            Terminal term;
+};
 
-            term.set_echo(false);
-            term.set_canonical(false);
-            term.set_ctrlc_ctrlz_as_characters(true);
+//        static Terminal raw() {
+//            TerminalSettings term;
+//
+//            term.set_echo(false);
+//            term.set_canonical(false);
+//            term.set_ctrlc_ctrlz_as_characters(true);
+//
+//            term.set_min_chars_for_canonical_read(1);
+//            term.set_timeout_for_non_canonical_read(0);
+//
+//            return term;
+//        }
 
-            term.set_min_chars_for_canonical_read(1);
-            term.set_timeout_for_non_canonical_read(0);
+class Terminal {
+    private:
+        TerminalSettings settings_;
 
-            return term;
+        static void write_sequence(const std::string &sequence) {
+            ssize_t written = write(STDOUT_FILENO,
+                                    sequence.c_str(),
+                                    sequence.size());
+
+            if (written == -1) {
+                throw std::system_error{errno, std::generic_category()};
+            }
+
+            if (static_cast<size_t>(written) != sequence.size()) {
+                throw std::runtime_error{"Not enough bytes was written"};
+            }
         }
 
-        void cursor_forward() const {}
-        void cursor_backward() const {}
+    public:
+        Terminal(const TerminalSettings &settings): settings_{settings} {
+            settings_.apply();
+        }
+
+        ~Terminal() {
+            // NOTE: this will abort a program if an exception is raised
+            settings_.reset();
+        }
+
+        void cursor_forward() const {
+        }
+
+        void move_cursor_backward() const {
+            write_sequence(EscapeSequence::MoveCursorBackward);
+        }
+
         void clear_the_screen() const {
-            write(STDOUT_FILENO, EscapeSequence::ClearTheScreen.c_str(), 4);
+            write_sequence(EscapeSequence::ClearTheScreen);
         }
-
 };
 
 
@@ -98,17 +139,25 @@ char constexpr ctrl_key(char c) {
 
 
 int main(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
 
-    Terminal term{Terminal::raw()};
-    while (char t = std::cin.get()) {
+    auto settings = TerminalSettings()
+        .set_echo(false)
+        .set_canonical(false)
+        .set_ctrlc_ctrlz_as_characters(true)
+        .set_timeout_for_non_canonical_read(0)
+        .set_min_chars_for_non_canonical_read(1);
+
+    auto term = Terminal{settings};
+
+    while (int t = std::cin.get()) {
 
         switch (t) {
             case ctrl_key(3):
                 goto done;
             case ctrl_key(4):
-                term.clear_the_screen();
+                // term.clear_the_screen();
+                term.move_cursor_backward();
+                break;
             default:
                 std::cout << int{t} << std::flush;
         }
