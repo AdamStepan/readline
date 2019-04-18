@@ -1,11 +1,22 @@
-#include <iostream>
-#include <string>
-
-class Readline {};
-
 #include <termios.h>
 #include <unistd.h>
 #include <system_error>
+#include <iostream>
+#include <string>
+
+class Readline {
+    private:
+        std::istream & stream_;
+
+        char completion_char_ = '\t';
+        std::function<std::string(const std::string &)> completer_;
+        std::function<std::string(void)> prompter_;
+
+    public:
+        Readline(std::istream &stream): stream_{stream} {}
+        std::string read(void) { return ""; }
+
+};
 
 struct EscapeSequence {
     static const std::string ClearTheScreen;
@@ -19,28 +30,26 @@ const std::string EscapeSequence::ClearTheScreen{"\x1b[2J"s};
 const std::string EscapeSequence::MoveCursorBackward{"\x1b[1D"s};
 const std::string EscapeSequence::MoveCursorForward{"\x1b[1C"s};
 
+namespace {
+    termios get_terminal_attr(void) {
+        termios term;
+
+        if (int rv = tcgetattr(STDIN_FILENO, &term); rv)
+            throw std::system_error{errno, std::generic_category()};
+
+        return term;
+    }
+
+    void set_terminal_attr(const termios term) {
+        if (int rv = tcsetattr(STDIN_FILENO, TCSANOW, &term); rv)
+            throw std::system_error{errno, std::generic_category()};
+    }
+}
+
 class TerminalSettings {
     private:
         termios original_ = get_terminal_attr();
         termios current_ = get_terminal_attr();
-
-        static termios get_terminal_attr(void) {
-            termios term;
-
-            int rv = tcgetattr(STDIN_FILENO, &term);
-
-            if (rv)
-                throw std::system_error{errno, std::generic_category()};
-
-            return term;
-        }
-
-        static void set_terminal_attr(const termios term) {
-            int rv = tcsetattr(STDIN_FILENO, TCSANOW, &term);
-
-            if (rv)
-                throw std::system_error{errno, std::generic_category()};
-        }
 
     public:
         void apply() const {
@@ -78,19 +87,6 @@ class TerminalSettings {
         }
 
 };
-
-//        static Terminal raw() {
-//            TerminalSettings term;
-//
-//            term.set_echo(false);
-//            term.set_canonical(false);
-//            term.set_ctrlc_ctrlz_as_characters(true);
-//
-//            term.set_min_chars_for_canonical_read(1);
-//            term.set_timeout_for_non_canonical_read(0);
-//
-//            return term;
-//        }
 
 class Terminal {
     private:
@@ -137,7 +133,6 @@ char constexpr ctrl_key(char c) {
     return c & 0x1F;
 }
 
-
 int main(int argc, char **argv) {
 
     auto settings = TerminalSettings()
@@ -148,6 +143,7 @@ int main(int argc, char **argv) {
         .set_min_chars_for_non_canonical_read(1);
 
     auto term = Terminal{settings};
+    auto readline = Readline(std::cin);
 
     while (int t = std::cin.get()) {
 
