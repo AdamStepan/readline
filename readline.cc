@@ -20,8 +20,8 @@ using namespace std::literals;
 const std::string EscapeSequence::ClearTheScreen{"\x1b[2J"s};
 const std::string EscapeSequence::ClearTheLine{"\x1b[K"s}; // from the active pos to end of the line
 const std::string EscapeSequence::MoveCursorBackward{"\x1b[1D"s};
-const std::string EscapeSequence::MoveCursorForward{"\x1b[1C"s};
-const std::string EscapeSequence::MoveCursorHorizonalAbsolute{"\x1b[G"s};
+const std::string EscapeSequence::MoveCursorForward{"\x1b[{N}C"s};
+const std::string EscapeSequence::MoveCursorHorizonalAbsolute{"\x1b[{N}G"s};
 
 namespace {
     termios get_terminal_attr(void) {
@@ -87,7 +87,7 @@ class TerminalSettings {
 
 class Terminal {
     private:
-        TerminalSettings settings_;
+        TerminalSettings &settings_;
 
         static void write_sequence(const std::string &sequence) {
             ssize_t written = write(STDOUT_FILENO,
@@ -104,7 +104,8 @@ class Terminal {
         }
 
     public:
-        Terminal(const TerminalSettings &settings): settings_{settings} {
+        Terminal(TerminalSettings &settings): settings_{settings} {
+            settings_.apply();
         }
 
         ~Terminal() {
@@ -113,7 +114,14 @@ class Terminal {
         }
 
         void move_cursor_forward() const {
-            write_sequence(EscapeSequence::MoveCursorForward);
+            return move_cursor_forward(1);
+        }
+
+        void move_cursor_forward(size_t n) const {
+            auto sequence{EscapeSequence::MoveCursorForward};
+            sequence.replace(sequence.find("{N}"s), 3, std::to_string(n));
+
+            write_sequence(sequence);
         }
 
         void move_cursor_backward() const {
@@ -129,7 +137,14 @@ class Terminal {
         }
 
         void move_cursor_horizontal_absolute() const {
-            write_sequence(EscapeSequence::MoveCursorHorizonalAbsolute);
+            move_cursor_horizontal_absolute(0);
+        }
+
+        void move_cursor_horizontal_absolute(size_t n) const {
+            auto sequence{EscapeSequence::MoveCursorHorizonalAbsolute};
+            sequence.replace(sequence.find("{N}"s), 3, std::to_string(n));
+
+            write_sequence(sequence);
         }
 
         void cooked() { settings_.reset(); }
@@ -142,30 +157,62 @@ class Readline {
         std::string buffer_{};
         size_t position_{0};
 
-        std::istream &stream_;
-        Terminal term_;
+        std::istream &input_;
+        std::ostream &output_;
+        TerminalSettings settings_;
 
     protected:
-        void write_single_char(int c) {
-            buffer_.insert(position_++, 1, static_cast<char>(c));
-            std::cout << static_cast<char>(c) << std::flush;
+        void write_single_char(const Terminal &term, int c) {
+
+            // we are inserting to the end of string
+            if (position_ == buffer_.size()) {
+                buffer_.push_back(c);
+                output_ << static_cast<char>(c) << std::flush;
+
+                position_++;
+            } else {
+                // TODO: ensure that we have space for a new character
+                // TODO: check capacity() * 2 < max_size()
+                term.move_cursor_horizontal_absolute();
+
+                auto ending = buffer_.substr(position_);
+                buffer_.erase(position_);
+
+                buffer_.insert(position_, 1, c);
+
+                position_++;
+                buffer_.insert(position_, ending);
+
+                output_ << buffer_ << std::flush;
+                term.move_cursor_horizontal_absolute(position_ + 1);
+            }
         }
 
-        void handle_special_character() {
+        void handle_special_character(const Terminal &term) {
 
-            if (auto c = stream_.get(); c != '[') {
-                stream_.unget();
-                return;
+            switch (auto c = input_.get(); c) {
+                case '[':
+                    break;
+                case '\x1c':
+                    output_ << position_ << " size: " << buffer_.size() << std::endl;
+                    return;
+                default:
+                    input_.unget();
+                    return;
             }
 
-            switch (auto c = stream_.get(); c) {
+            switch (auto c = input_.get(); c) {
                 case 'D':
-                    --position_;
-                    term_.move_cursor_backward();
+                    if (position_) {
+                        --position_;
+                        term.move_cursor_backward();
+                    }
                     break;
                 case 'C':
-                    ++position_;
-                    term_.move_cursor_forward();
+                    if (position_ < buffer_.size()) {
+                        ++position_;
+                        term.move_cursor_forward();
+                    }
                     break;
                 case 'A':
                 case 'B':
@@ -176,29 +223,27 @@ class Readline {
             }
         }
     public:
-        Readline(const Terminal &term, std::istream &stream): stream_{stream},
-            term_{term} {}
+        Readline(const TerminalSettings &s, std::istream &is, std::ostream &os):
+            input_{is}, output_{os}, settings_{s} {}
 
         std::string read(void) {
 
-            term_.raw();
+            Terminal term{settings_};
 
-            while (auto c = stream_.get()) {
+            while (auto c = input_.get()) {
 
                 if (c == '\n') {
                     std::cout << std::endl;
-                    term_.move_cursor_horizontal_absolute();
-                    term_.cooked();
+                    term.move_cursor_horizontal_absolute();
                     return buffer_;
                 } else if (iscntrl(c)) {
-                    handle_special_character();
+                    handle_special_character(term);
                 } else {
-                    write_single_char(c);
+                    write_single_char(term, c);
                 }
 
             }
 
-            term_.cooked();
             return buffer_;
         }
 };
@@ -213,8 +258,7 @@ int main(int argc, char **argv) {
         .set_timeout_for_non_canonical_read(0)
         .set_min_chars_for_non_canonical_read(1);
 
-    auto term = Terminal{settings};
-    auto readline = Readline(term, std::cin);
+    auto readline = Readline(settings, std::cin, std::cout);
 
     auto line = readline.read();
 
