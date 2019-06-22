@@ -156,11 +156,12 @@ class Readline {
         std::string buffer_{};
         size_t position_{0};
 
-        std::istream &input_;
-        std::ostream &output_;
-        TerminalSettings settings_;
+        std::reference_wrapper<std::istream> input_{std::cin};
+        std::reference_wrapper<std::ostream> output_{std::cout};
+        TerminalSettings settings_{};
 
-        std::function<std::string(std::string)> completion_;
+        std::function<std::string(std::string)> completion_{};
+        std::function<std::string(void)> prompter_{};
 
     protected:
         void write_single_char(const Terminal &term, int c) {
@@ -168,7 +169,7 @@ class Readline {
             // we are inserting to the end of string
             if (position_ == buffer_.size()) {
                 buffer_.push_back(c);
-                output_ << static_cast<char>(c) << std::flush;
+                output_.get()<< static_cast<char>(c) << std::flush;
 
                 position_++;
             } else {
@@ -184,7 +185,7 @@ class Readline {
                 position_++;
                 buffer_.insert(position_, ending);
 
-                output_ << buffer_ << std::flush;
+                output_.get() << buffer_ << std::flush;
                 term.move_cursor_horizontal_absolute(position_ + 1);
             }
         }
@@ -195,6 +196,7 @@ class Readline {
             switch (c) {
                 // ctrl + c
                 case 3:
+                    // XXX: we should clear line without prompt
                     buffer_.clear();
                     position_ = 0;
                     term.move_cursor_horizontal_absolute(0);
@@ -202,20 +204,19 @@ class Readline {
                     return;
             }
 
-            switch (auto c = input_.get(); c) {
+            switch (auto c = input_.get().get(); c) {
                 case '[':
-                    std::cout << "[, breaking" << std::endl;
                     break;
                 case '\x1c':
-                    output_ << position_ << " size: " << buffer_.size() << std::endl;
+                    output_.get() << position_ << " size: " << buffer_.size() << std::endl;
                     return;
                 default:
-                    std::cout << "unget: -->" << c << "<---" << std::endl;
-                    input_.unget();
+                    input_.get().unget();
                     return;
             }
 
-            switch (auto c = input_.get(); c) {
+            // XXX: we should not allow to move before the end of the prompt
+            switch (auto c = input_.get().get(); c) {
                 // move left
                 case 'D':
                     if (position_) {
@@ -241,23 +242,24 @@ class Readline {
 
         void do_autocomplete() {
             if (completion_) {
+                // XXX: we should pass some completion info
                 buffer_ = completion_(buffer_);
             }
         }
 
+        void do_print_prompt() {
+            if (prompter_) {
+                output_.get() << prompter_();
+            }
+        }
     public:
-        Readline(const TerminalSettings &s, std::istream &is, std::ostream &os):
-            input_{is}, output_{os}, settings_{s}, completion_{} {}
-
-        Readline(const TerminalSettings &s, std::istream &is, std::ostream &os,
-                std::function<std::string(std::string)> c):
-            input_{is}, output_{os}, settings_{s}, completion_{c} {}
 
         std::string read(void) {
 
             Terminal term{settings_};
+            do_print_prompt();
 
-            while (auto c = input_.get()) {
+            while (auto c = input_.get().get()) {
                 if (c == '\n') {
                     std::cout << std::endl;
                     term.move_cursor_horizontal_absolute();
@@ -274,6 +276,32 @@ class Readline {
 
             return buffer_;
         }
+
+        Readline &set_terminal_settings(const TerminalSettings &s) {
+            settings_ = s;
+            return *this;
+        }
+
+        Readline &set_output_stream(std::ostream &os) {
+            output_ = os;
+            return *this;
+        }
+
+        Readline &set_input_stream(std::istream &is) {
+            input_ = is;
+            return *this;
+        }
+
+        Readline &set_autocomplete(std::function<std::string(std::string)> c) {
+            completion_ = c;
+            return *this;
+        }
+
+        Readline &set_prompter(std::function<std::string(void)> p) {
+            prompter_ = p;
+            return *this;
+        }
+
 };
 
 int main(int argc, char **argv) {
@@ -286,7 +314,10 @@ int main(int argc, char **argv) {
         .set_timeout_for_non_canonical_read(0)
         .set_min_chars_for_non_canonical_read(1);
 
-    auto readline = Readline(settings, std::cin, std::cout);
+    auto readline = Readline()
+        .set_terminal_settings(settings)
+        .set_prompter([] { return "$> "; });
+
     auto line = readline.read();
 
     std::cout << "got: " << line << std::endl;
