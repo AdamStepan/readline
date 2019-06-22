@@ -4,8 +4,7 @@
 #include <iostream>
 #include <string>
 #include <functional>
-
-
+#include <iomanip>
 
 struct EscapeSequence {
     static const std::string ClearTheScreen;
@@ -161,6 +160,8 @@ class Readline {
         std::ostream &output_;
         TerminalSettings settings_;
 
+        std::function<std::string(std::string)> completion_;
+
     protected:
         void write_single_char(const Terminal &term, int c) {
 
@@ -188,26 +189,41 @@ class Readline {
             }
         }
 
-        void handle_special_character(const Terminal &term) {
+        void handle_special_character(const Terminal &term, char c) {
+
+            // XXX: we can use trie with handlers for this
+            switch (c) {
+                // ctrl + c
+                case 3:
+                    buffer_.clear();
+                    position_ = 0;
+                    term.move_cursor_horizontal_absolute(0);
+                    term.clear_the_line();
+                    return;
+            }
 
             switch (auto c = input_.get(); c) {
                 case '[':
+                    std::cout << "[, breaking" << std::endl;
                     break;
                 case '\x1c':
                     output_ << position_ << " size: " << buffer_.size() << std::endl;
                     return;
                 default:
+                    std::cout << "unget: -->" << c << "<---" << std::endl;
                     input_.unget();
                     return;
             }
 
             switch (auto c = input_.get(); c) {
+                // move left
                 case 'D':
                     if (position_) {
                         --position_;
                         term.move_cursor_backward();
                     }
                     break;
+                // move right
                 case 'C':
                     if (position_ < buffer_.size()) {
                         ++position_;
@@ -222,22 +238,34 @@ class Readline {
                     std::cout << "X: " << c << std::endl;
             }
         }
+
+        void do_autocomplete() {
+            if (completion_) {
+                buffer_ = completion_(buffer_);
+            }
+        }
+
     public:
         Readline(const TerminalSettings &s, std::istream &is, std::ostream &os):
-            input_{is}, output_{os}, settings_{s} {}
+            input_{is}, output_{os}, settings_{s}, completion_{} {}
+
+        Readline(const TerminalSettings &s, std::istream &is, std::ostream &os,
+                std::function<std::string(std::string)> c):
+            input_{is}, output_{os}, settings_{s}, completion_{c} {}
 
         std::string read(void) {
 
             Terminal term{settings_};
 
             while (auto c = input_.get()) {
-
                 if (c == '\n') {
                     std::cout << std::endl;
                     term.move_cursor_horizontal_absolute();
                     return buffer_;
+                } else if (c == '\t') {
+                    do_autocomplete();
                 } else if (iscntrl(c)) {
-                    handle_special_character(term);
+                    handle_special_character(term, c);
                 } else {
                     write_single_char(term, c);
                 }
@@ -259,7 +287,6 @@ int main(int argc, char **argv) {
         .set_min_chars_for_non_canonical_read(1);
 
     auto readline = Readline(settings, std::cin, std::cout);
-
     auto line = readline.read();
 
     std::cout << "got: " << line << std::endl;
