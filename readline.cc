@@ -269,6 +269,7 @@ class Readline {
         HistoryView history_view_{history_};
 
         TerminalSettings settings_{};
+
         Prompt prompter_{};
 
         std::function<std::string(std::string)> completion_{};
@@ -365,15 +366,20 @@ class Readline {
                     }
                     break;
                 case 'A':
-                    clear_line_without_prompt(term);
-                    buffer_ = history_view_.previous();
-                    position_ = buffer_.size();
-                    output_.get() << buffer_;
+                    if (history_.size()) {
+                        clear_line_without_prompt(term);
+                        buffer_ = history_view_.previous();
+                        position_ = buffer_.size();
+                        output_.get() << buffer_;
+                    }
+                    break;
                 case 'B':
-                    clear_line_without_prompt(term);
-                    buffer_ = history_view_.next();
-                    position_ = buffer_.size();
-                    output_.get() << buffer_;
+                    if (history_.size()) {
+                        clear_line_without_prompt(term);
+                        buffer_ = history_view_.next();
+                        position_ = buffer_.size();
+                        output_.get() << buffer_;
+                    }
                     break;
                 default:
                     break;
