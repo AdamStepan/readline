@@ -5,6 +5,10 @@
 #include <string>
 #include <functional>
 #include <iomanip>
+#include <unordered_map>
+#include <deque>
+#include <iterator>
+#include <memory>
 
 struct EscapeSequence {
     static const std::string ClearTheScreen;
@@ -151,6 +155,108 @@ class Terminal {
 
 };
 
+class History {
+    std::shared_ptr<std::ostream> history_file_{};
+    size_t max_entries_{1024};
+    std::deque<std::string> entries_{};
+
+    void write_to_file() {
+        std::copy(entries_.cbegin(),
+                  entries_.cend(),
+                  std::ostream_iterator<std::string>{*history_file_.get(), "\n"});
+    }
+
+public:
+
+    std::string get_line(const size_t n) const {
+        return entries_.at(n);
+    }
+
+    void add_line(const std::string &line) {
+
+        entries_.push_back(line);
+
+        if (entries_.size() > max_entries_) {
+            entries_.pop_front();
+        }
+    }
+
+    size_t size() const {
+        return entries_.size();
+    }
+
+    bool empty() const {
+        return !size();
+    }
+
+    void save() {
+        write_to_file();
+    }
+};
+
+class HistoryView {
+    const History &history_;
+    size_t current_line_{0};
+
+public:
+    HistoryView(const History &h): history_{h} {}
+    HistoryView(const HistoryView &) = delete;
+
+    const std::string previous() {
+
+        if (history_.empty()) {
+            return "";
+        }
+
+        if (current_line_) {
+            current_line_--;
+            return history_.get_line(current_line_);
+        } else {
+            return history_.get_line(0);
+        }
+
+    }
+
+    const std::string next() {
+
+        if (history_.empty()) {
+            return "";
+        }
+
+        if (current_line_ < history_.size()) {
+            return history_.get_line(current_line_++);
+        }
+
+        return history_.get_line(history_.size() - 1);
+    }
+};
+
+class Prompt {
+    std::function<std::string(void)> prompter_{};
+    std::string prompt_{""};
+public:
+
+    void set_prompt(decltype(prompter_) p) {
+        prompter_ = p;
+    }
+
+    const std::string &operator() () {
+        prompt_ = prompter_();
+        return prompt_;
+    }
+
+    size_t size() const {
+        return prompt_.size();
+    }
+
+    operator bool () const {
+        return static_cast<bool>(prompter_);
+    }
+};
+
+class Buffer {};
+class TerminalBuffer {};
+
 class Readline {
     private:
         std::string buffer_{};
@@ -158,11 +264,14 @@ class Readline {
 
         std::reference_wrapper<std::istream> input_{std::cin};
         std::reference_wrapper<std::ostream> output_{std::cout};
+
+        History history_{};
+        HistoryView history_view_{history_};
+
         TerminalSettings settings_{};
+        Prompt prompter_{};
 
         std::function<std::string(std::string)> completion_{};
-        std::function<std::string(void)> prompter_{};
-
     protected:
         void write_single_char(const Terminal &term, int c) {
 
@@ -190,18 +299,35 @@ class Readline {
             }
         }
 
-        void handle_special_character(const Terminal &term, char c) {
+        using StopFlag = bool;
+
+        void clear_line_without_prompt(const Terminal &term) {
+            buffer_.clear();
+            position_ = 0;
+            term.move_cursor_horizontal_absolute(prompter_.size() + 1);
+            term.clear_the_line();
+        }
+
+        StopFlag handle_special_character(const Terminal &term, char c) {
 
             // XXX: we can use trie with handlers for this
             switch (c) {
-                // ctrl + c
-                case 3:
-                    // XXX: we should clear line without prompt
-                    buffer_.clear();
-                    position_ = 0;
-                    term.move_cursor_horizontal_absolute(0);
-                    term.clear_the_line();
-                    return;
+                // TODO: handle all ctrl+ characters in this switch
+                // ctrl + c, ctrl + u
+                case 3: case 21:
+                    clear_line_without_prompt(term);
+                    return false;
+                // ctrl + d
+                case 4:
+                    return buffer_.empty();
+                // backspace
+                case '\x7f':
+                    if (position_) {
+                        --position_;
+                        buffer_.pop_back();
+                        term.move_cursor_backward();
+                    }
+                    return false;
             }
 
             switch (auto c = input_.get().get(); c) {
@@ -209,13 +335,14 @@ class Readline {
                     break;
                 case '\x1c':
                     output_.get() << position_ << " size: " << buffer_.size() << std::endl;
-                    return;
+                    return false;
+
                 default:
+                    std::cerr << "uknown code: " << c << std::endl;
                     input_.get().unget();
-                    return;
+                    return true;
             }
 
-            // XXX: we should not allow to move before the end of the prompt
             switch (auto c = input_.get().get(); c) {
                 // move left
                 case 'D':
@@ -232,12 +359,21 @@ class Readline {
                     }
                     break;
                 case 'A':
+                    clear_line_without_prompt(term);
+                    buffer_ = history_view_.previous();
+                    position_ = buffer_.size();
+                    output_.get() << buffer_;
                 case 'B':
-                    // move forward/backward in the history
+                    clear_line_without_prompt(term);
+                    buffer_ = history_view_.next();
+                    position_ = buffer_.size();
+                    output_.get() << buffer_;
                     break;
                 default:
-                    std::cout << "X: " << c << std::endl;
+                    break;
             }
+
+            return false;
         }
 
         void do_autocomplete() {
@@ -252,28 +388,38 @@ class Readline {
                 output_.get() << prompter_();
             }
         }
+
+        void add_history() {
+            history_.add_line(buffer_);
+        }
     public:
 
         std::string read(void) {
 
             Terminal term{settings_};
+            buffer_.clear();
+            position_ = 0;
+            term.move_cursor_horizontal_absolute();
             do_print_prompt();
 
             while (auto c = input_.get().get()) {
                 if (c == '\n') {
                     std::cout << std::endl;
                     term.move_cursor_horizontal_absolute();
+                    add_history();
                     return buffer_;
                 } else if (c == '\t') {
                     do_autocomplete();
                 } else if (iscntrl(c)) {
-                    handle_special_character(term, c);
+                    if(handle_special_character(term, c)) {
+                        break;
+                    }
                 } else {
                     write_single_char(term, c);
                 }
 
             }
-
+            add_history();
             return buffer_;
         }
 
@@ -298,7 +444,7 @@ class Readline {
         }
 
         Readline &set_prompter(std::function<std::string(void)> p) {
-            prompter_ = p;
+            prompter_.set_prompt(p);
             return *this;
         }
 
@@ -314,11 +460,10 @@ int main(int argc, char **argv) {
         .set_timeout_for_non_canonical_read(0)
         .set_min_chars_for_non_canonical_read(1);
 
-    auto readline = Readline()
-        .set_terminal_settings(settings)
-        .set_prompter([] { return "$> "; });
+    Readline readline{};
+    readline.set_terminal_settings(settings).set_prompter([] { return "$> "; });
 
-    auto line = readline.read();
-
-    std::cout << "got: " << line << std::endl;
+    for (auto line = readline.read(); !line.empty(); line = readline.read()) {
+        std::cout << "got: " << line << std::endl;
+    }
 }
