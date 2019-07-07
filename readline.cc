@@ -308,24 +308,30 @@ class Readline {
             term.clear_the_line();
         }
 
+        enum class FirstByte: char {
+            CTRL_C = 3,
+            CTRL_D = 4,
+            CTRL_U = 21,
+            BACKSPACE = 127
+        };
+
         StopFlag handle_special_character(const Terminal &term, char c) {
 
             // XXX: we can use trie with handlers for this
-            switch (c) {
+            switch (static_cast<FirstByte>(c)) {
                 // TODO: handle all ctrl+ characters in this switch
-                // ctrl + c, ctrl + u
-                case 3: case 21:
+                case FirstByte::CTRL_C:
+                case FirstByte::CTRL_U:
                     clear_line_without_prompt(term);
                     return false;
-                // ctrl + d
-                case 4:
+                case FirstByte::CTRL_D:
                     return buffer_.empty();
-                // backspace
-                case '\x7f':
+                case FirstByte::BACKSPACE:
                     if (position_) {
                         --position_;
                         buffer_.pop_back();
                         term.move_cursor_backward();
+                        term.clear_the_line();
                     }
                     return false;
             }
