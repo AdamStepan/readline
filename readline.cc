@@ -254,13 +254,79 @@ public:
     }
 };
 
-class Buffer {};
+class Buffer {
+    size_t cursor_pos_{0};
+    std::string data_;
+
+public:
+    void insert(char c) {
+        if (cursor_pos_ == data_.size()) {
+            data_.push_back(c);
+            cursor_pos_++;
+        } else {
+            // TODO: check size
+            auto ending = data_.substr(cursor_pos_);
+            data_.erase(cursor_pos_);
+
+            data_.insert(cursor_pos_, 1, c);
+
+            cursor_pos_++;
+            data_.insert(cursor_pos_, ending);
+        }
+    }
+
+    void move_left() {
+        cursor_pos_--;
+    }
+
+    void move_right() {
+        cursor_pos_++;
+    }
+
+    void pop_back() {
+        cursor_pos_--;
+        data_.pop_back();
+    }
+
+    void clear() {
+        cursor_pos_ = 0;
+        data_.clear();
+    }
+
+    void reset(std::string s) {
+        data_ = std::move(s);
+        cursor_pos_ = data_.size();
+    }
+
+    size_t position() const {
+        return cursor_pos_;
+    }
+
+    std::string data() const {
+        return data_;
+    }
+
+    bool empty() const {
+        return data_.empty();
+    }
+
+    size_t size() const {
+        return data_.size();
+    }
+
+    friend std::ostream &operator<<(std::ostream &, const Buffer &);
+};
+
+std::ostream &operator<<(std::ostream &os, const Buffer &b) {
+    return os << b.data_;
+}
+
 class TerminalBuffer {};
+
 
 class Readline {
     private:
-        std::string buffer_{};
-        size_t position_{0};
+        Buffer buffer_;
 
         std::reference_wrapper<std::istream> input_{std::cin};
         std::reference_wrapper<std::ostream> output_{std::cout};
@@ -276,35 +342,20 @@ class Readline {
     protected:
         void write_single_char(const Terminal &term, int c) {
 
-            // we are inserting to the end of string
-            if (position_ == buffer_.size()) {
-                buffer_.push_back(c);
-                output_.get()<< static_cast<char>(c) << std::flush;
+            const size_t position_after_prompt_ = prompter_.size() + 1;
 
-                position_++;
-            } else {
-                // TODO: ensure that we have space for a new character
-                // TODO: check capacity() * 2 < max_size()
-                term.move_cursor_horizontal_absolute(prompter_.size() + 1);
+            term.move_cursor_horizontal_absolute(position_after_prompt_);
 
-                auto ending = buffer_.substr(position_);
-                buffer_.erase(position_);
+            buffer_.insert(static_cast<char>(c));
+            output_.get() << buffer_ << std::flush;
 
-                buffer_.insert(position_, 1, c);
-
-                position_++;
-                buffer_.insert(position_, ending);
-
-                output_.get() << buffer_ << std::flush;
-                term.move_cursor_horizontal_absolute(position_ + prompter_.size() + 1);
-            }
+            term.move_cursor_horizontal_absolute(position_after_prompt_ + buffer_.position());
         }
 
         using StopFlag = bool;
 
         void clear_line_without_prompt(const Terminal &term) {
             buffer_.clear();
-            position_ = 0;
             term.move_cursor_horizontal_absolute(prompter_.size() + 1);
             term.clear_the_line();
         }
@@ -328,8 +379,7 @@ class Readline {
                 case FirstByte::CTRL_D:
                     return buffer_.empty();
                 case FirstByte::BACKSPACE:
-                    if (position_) {
-                        --position_;
+                    if (buffer_.position()) {
                         buffer_.pop_back();
                         term.move_cursor_backward();
                         term.clear_the_line();
@@ -340,10 +390,6 @@ class Readline {
             switch (auto c = input_.get().get(); c) {
                 case '[':
                     break;
-                case '\x1c':
-                    output_.get() << position_ << " size: " << buffer_.size() << std::endl;
-                    return false;
-
                 default:
                     std::cerr << "uknown code: " << c << std::endl;
                     input_.get().unget();
@@ -353,31 +399,30 @@ class Readline {
             switch (auto c = input_.get().get(); c) {
                 // move left
                 case 'D':
-                    if (position_) {
-                        --position_;
+                    if (buffer_.position()) {
+                        buffer_.move_left();
                         term.move_cursor_backward();
                     }
                     break;
                 // move right
                 case 'C':
-                    if (position_ < buffer_.size()) {
-                        ++position_;
+                    if (buffer_.position() < buffer_.size()) {
+                        buffer_.move_right();
                         term.move_cursor_forward();
-                    }
-                    break;
-                case 'A':
-                    if (history_.size()) {
-                        clear_line_without_prompt(term);
-                        buffer_ = history_view_.previous();
-                        position_ = buffer_.size();
-                        output_.get() << buffer_;
                     }
                     break;
                 case 'B':
                     if (history_.size()) {
                         clear_line_without_prompt(term);
-                        buffer_ = history_view_.next();
-                        position_ = buffer_.size();
+                        buffer_.reset(history_view_.previous());
+                        output_.get() << buffer_;
+                    }
+                    break;
+                case 'A':
+                    // TODO: we should be able to get back to the empty line
+                    if (history_.size()) {
+                        clear_line_without_prompt(term);
+                        buffer_.reset(history_view_.next());
                         output_.get() << buffer_;
                     }
                     break;
@@ -391,7 +436,7 @@ class Readline {
         void do_autocomplete() {
             if (completion_) {
                 // XXX: we should pass some completion info
-                buffer_ = completion_(buffer_);
+                buffer_.reset(completion_(buffer_.data()));
             }
         }
 
@@ -402,7 +447,7 @@ class Readline {
         }
 
         void add_history() {
-            history_.add_line(buffer_);
+            history_.add_line(buffer_.data());
         }
     public:
 
@@ -410,7 +455,6 @@ class Readline {
 
             Terminal term{settings_};
             buffer_.clear();
-            position_ = 0;
             term.move_cursor_horizontal_absolute();
             do_print_prompt();
 
@@ -418,8 +462,7 @@ class Readline {
                 if (c == '\n') {
                     std::cout << std::endl;
                     term.move_cursor_horizontal_absolute();
-                    add_history();
-                    return buffer_;
+                    goto quit;
                 } else if (c == '\t') {
                     do_autocomplete();
                 } else if (iscntrl(c)) {
@@ -431,8 +474,9 @@ class Readline {
                 }
 
             }
+quit:
             add_history();
-            return buffer_;
+            return buffer_.data();
         }
 
         Readline &set_terminal_settings(const TerminalSettings &s) {
