@@ -284,7 +284,7 @@ class Readline {
             } else {
                 // TODO: ensure that we have space for a new character
                 // TODO: check capacity() * 2 < max_size()
-                term.move_cursor_horizontal_absolute();
+                term.move_cursor_horizontal_absolute(prompter_.size() + 1);
 
                 auto ending = buffer_.substr(position_);
                 buffer_.erase(position_);
@@ -295,7 +295,7 @@ class Readline {
                 buffer_.insert(position_, ending);
 
                 output_.get() << buffer_ << std::flush;
-                term.move_cursor_horizontal_absolute(position_ + 1);
+                term.move_cursor_horizontal_absolute(position_ + prompter_.size() + 1);
             }
         }
 
