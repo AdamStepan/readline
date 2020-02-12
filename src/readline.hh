@@ -382,7 +382,7 @@ template <typename T>
 struct Trie {
 
     using Key = T;
-    using SubTrie = std::unique_ptr<Trie<T>>;
+    using SubTrie = std::shared_ptr<Trie<T>>;
     using Item = std::function<void(void)>;
 
     std::unordered_map<Key, SubTrie> data;
@@ -410,7 +410,8 @@ struct Trie {
         return true;
     }
 
-    void insert(const std::initializer_list<const T> &c, const Item &i) {
+    template <typename CharType>
+    void insert(const std::initializer_list<CharType> &c, const Item &i) {
         insert(std::begin(c), std::end(c), i);
     }
 
@@ -493,8 +494,8 @@ struct CommandReader {
 
     CommandReader(std::istream &is): input_{is} {}
 
-    template <typename F>
-    void add_command(const std::initializer_list<const T> &key, F &&f) {
+    template <typename CharType, typename F>
+    void add_command(const std::initializer_list<CharType> &key, F &&f) {
         commands_.insert(key, f);
     }
 
@@ -678,8 +679,8 @@ class Readline {
             command_reader_.set_default([this] { do_write_char(); });
         }
 
-        Readline(const Readline &) = default;
-        Readline(Readline &&) = default;
+//        Readline(const Readline &) = default;
+//        Readline(Readline &&) = default;
 
         ~Readline() { terminal_.reset_settings(); }
 
