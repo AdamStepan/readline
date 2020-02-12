@@ -1,0 +1,14 @@
+language: c++
+compiler:
+    - clang
+    - gcc
+os: linux
+install:
+    - sudo apt-get install cmake libboost-test-dev libboost-system-dev
+branches:
+  only:
+    - master
+script:
+  - mkdir build
+  - cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make --jobs
+  - ctest --output-on-failure --verbose
