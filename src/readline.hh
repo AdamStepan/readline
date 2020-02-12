@@ -309,15 +309,21 @@ public:
     }
 
     void move_left() {
-        cursor_pos_--;
+        if (cursor_pos_ >= 1) {
+            cursor_pos_--;
+        }
     }
 
     void move_right() {
-        cursor_pos_++;
+        if (cursor_pos_ < data_.size()) {
+            cursor_pos_++;
+        }
     }
 
     void remove() {
-        data_.erase(cursor_pos_--, 1);
+        if (cursor_pos_ >= 1) {
+            data_.erase(--cursor_pos_, 1);
+        }
     }
 
     void clear() {
@@ -603,10 +609,16 @@ class Readline {
 
         void do_backspace() {
             if (buffer_.position()) {
+                auto pos = buffer_.position();
+                // clear the line
                 terminal_.move_cursor_horizontal_absolute(prompter_.size() + 1);
                 terminal_.clear_the_line();
+                // remove char from the buffer
                 buffer_.remove();
+                // write buffer to the output
                 output_.get() << buffer_ << std::flush;
+                // restore and adjust position
+                terminal_.move_cursor_horizontal_absolute(prompter_.size() + buffer_.position() + 1);
             }
         }
 

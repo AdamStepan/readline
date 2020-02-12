@@ -19,3 +19,5 @@ function (add_readline_test NAME SOURCES)
 endfunction()
 
 add_readline_test(test-command-reader test_command_reader.cc)
+add_readline_test(test-buffer test_buffer.cc)
+
