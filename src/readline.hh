@@ -484,13 +484,26 @@ struct UnknownCommandSequence<char>: std::runtime_error {
 template <typename T>
 struct CommandReader {
 
+    /**
+     * All defined commands
+     */
     Trie<T> commands_;
+
+    /**
+     * Default command
+     *
+     * It's called when no command matches the input sequence
+     */
     typename Trie<T>::Item default_;
 
+    /** Data source */
     std::istream &input_;
 
+    /** Does EOF occured */
     bool should_stop_{false};
-    char c_{'\0'};
+
+    /** Last readed character */
+    char curchar_{'\0'};
 
     CommandReader(std::istream &is): input_{is} {}
 
@@ -511,7 +524,7 @@ struct CommandReader {
 
     void stop_reading() { should_stop_ = true; }
     void start_reading() { should_stop_ = false; }
-    char current_char() const { return c_; }
+    char current_char() const { return curchar_; }
 
     void run_command(const Trie<T> &t) {
         // current character does not have associated command
@@ -523,19 +536,19 @@ struct CommandReader {
 
         while (!should_stop_) {
 
-            c_ = input_.get();
+            curchar_ = input_.get();
 
-            if (c_ == EOF) {
+            if (curchar_ == EOF) {
                 should_stop_ = true;
                 break;
             }
             // XXX: THIS is a total bullshit, you should rewrite it
-            if (!t->contains(c_)) {
+            if (!t->contains(curchar_)) {
                 if (!t->item) {
                     if (default_) {
                         default_();
                     } else {
-                        throw std::runtime_error("Unknown command: " + std::to_string((int)c_));
+                        throw std::runtime_error("Unknown command: " + std::to_string((int)curchar_));
                     }
                 } else {
                     t->item();
@@ -544,7 +557,7 @@ struct CommandReader {
 
                 t = &commands_;
             } else {
-                t = &(*t)[c_];//t->operator[](c_);
+                t = &(*t)[curchar_];//t->operator[](curchar_);
 
                 if (t->empty() && t->item) {
                     t->item();
