@@ -681,6 +681,8 @@ class Readline {
         Readline(const Readline &) = default;
         Readline(Readline &&) = default;
 
+        ~Readline() { terminal_.reset_settings(); }
+
         std::string read(void) {
 
             buffer_.clear();
