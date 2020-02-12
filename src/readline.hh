@@ -649,8 +649,15 @@ class Readline {
 
         void do_autocomplete() {
             if (completion_) {
-                // XXX: we should pass some completion info
+                // clear the line
+                terminal_.move_cursor_horizontal_absolute(prompter_.size() + 1);
+                terminal_.clear_the_line();
+                // assign to the buffer string from the completion function
                 buffer_.reset(completion_(buffer_.data()));
+                // write buffer to the output
+                output_.get() << buffer_ << std::flush;
+                // restore and adjust position
+                terminal_.move_cursor_horizontal_absolute(prompter_.size() + buffer_.position() + 1);
             }
         }
 
