@@ -10,7 +10,7 @@ BOOST_AUTO_TEST_SUITE(TestCommandReader)
 BOOST_AUTO_TEST_CASE(SimpleCommandWorks) {
 
     std::stringstream input{"a"};
-    CommandReader<char> reader{input};
+    CommandReader reader{input};
     bool command_called = false;
 
     reader.add_command('a', [&] { command_called = true; });
@@ -23,7 +23,7 @@ BOOST_AUTO_TEST_CASE(SimpleCommandWorks) {
 BOOST_AUTO_TEST_CASE(TheLongestCommandMatches) {
 
     std::stringstream input{"abc"};
-    CommandReader<char> reader{input};
+    CommandReader reader{input};
     bool command_a_called = false,
          command_b_called = false,
          command_c_called = false;
@@ -43,7 +43,7 @@ BOOST_AUTO_TEST_CASE(TheLongestCommandMatches) {
 BOOST_AUTO_TEST_CASE(DefaultCommandWorks) {
 
     std::stringstream input{"x"};
-    CommandReader<char> reader{input};
+    CommandReader reader{input};
     bool default_command_called = false,
          command_a_called = false;
 
@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(DefaultCommandWorks) {
 BOOST_AUTO_TEST_CASE(EmptyInputStopsReading) {
 
     std::stringstream input{""};
-    CommandReader<char> reader{input};
+    CommandReader reader{input};
     reader.start_reading();
     reader.read_and_execute();
 
@@ -70,7 +70,7 @@ BOOST_AUTO_TEST_CASE(EmptyInputStopsReading) {
 BOOST_AUTO_TEST_CASE(ItCanReadConsecutiveCommands) {
 
     std::stringstream input{"ab"};
-    CommandReader<char> reader{input};
+    CommandReader reader{input};
     bool command_a_called = false,
          command_b_called = false;
 
@@ -87,7 +87,7 @@ BOOST_AUTO_TEST_CASE(ItCanReadConsecutiveCommands) {
 BOOST_AUTO_TEST_CASE(ItCanReadConsecutiveCommandsWithDefault) {
 
     std::stringstream input{"abcde"};
-    CommandReader<char> reader{input};
+    CommandReader reader{input};
     bool command_a_called = false,
          command_b_called = false;
     unsigned int default_called = 0;

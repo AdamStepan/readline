@@ -384,72 +384,68 @@ const auto MOVE_RIGHT = {ESC, '[', 'C'};
 const auto MOVE_DOWN = {ESC, '[', 'A'};
 const auto MOVE_UP = {ESC, '[', 'B'};
 
-template <typename T>
-struct Trie {
+struct CommandSequences {
 
-    using Key = T;
-    using SubTrie = std::shared_ptr<Trie<T>>;
-    using Item = std::function<void(void)>;
+    using SequenceChar = char;
+    using SubSequence = std::shared_ptr<CommandSequences>;
+    using Command = std::function<void(void)>;
 
-    std::unordered_map<Key, SubTrie> data;
-    Item item;
+    std::unordered_map<SequenceChar, SubSequence> sequences;
+    Command command;
 
     template <typename It>
-    bool insert(It begin, It end, const Item &item) {
+    void insert(It begin, It end, const Command &command) {
 
-        if (begin == end) {
-            return false;
+        CommandSequences *sequence = this;
+
+        while (begin != end) {
+
+            if (!sequence->contains(*begin)) {
+                sequence->sequences[*begin].reset(new CommandSequences());
+            }
+
+            sequence = sequence->sequences[*begin].get();
+
+            begin = std::next(begin);
         }
 
-        auto &&subtrie = data[*begin];
-
-        if (!subtrie) {
-            subtrie.reset(new Trie<T>());
-        }
-
-        auto &&inserted = subtrie->insert(std::next(begin), end, item);
-
-        if (!inserted) {
-            data[*begin]->item = item;
-        }
-
-        return true;
+        sequence->command = command;
     }
 
     template <typename CharType>
-    void insert(const std::initializer_list<CharType> &c, const Item &i) {
-        insert(std::begin(c), std::end(c), i);
+    void insert(const std::initializer_list<CharType> &sequence, const Command &command) {
+        insert(std::begin(sequence), std::end(sequence), command);
     }
 
-    void insert(const Key &_, const Item &i) {
-        auto && k= std::initializer_list<Key>{_};
-        insert(std::begin(k), std::end(k), i);
+    void insert(const SequenceChar &ch, const Command &command) {
+        auto && sequence = std::initializer_list<SequenceChar>{ch};
+        insert(std::begin(sequence), std::end(sequence), command);
     }
 
-    bool contains(const Key &k) const {
-        return data.count(k) >= 1;
+    bool contains(const SequenceChar &k) const {
+        return sequences.count(k) >= 1;
     }
 
     bool empty() const {
-        return data.empty();
+        return sequences.empty();
     }
 
-    const Trie &operator[](const Key &k) const {
-        return *data.at(k);
+    const CommandSequences &operator[](const SequenceChar &k) const {
+        return *sequences.at(k);
     }
 
-    const Trie &operator[](const std::initializer_list<Key> &keys) const {
-        const Trie *subtrie = this;
+    const CommandSequences &operator[](const std::initializer_list<SequenceChar> &sequence) const {
+        const CommandSequences *subsequence = this;
 
-        for (auto &&key: keys) {
-            subtrie = subtrie->data.at(key).get();
+        for (auto &&key: sequence) {
+            subsequence = subsequence->sequences.at(key).get();
         }
 
-        return *subtrie;
+        return *subsequence;
     }
 
     void operator() () const {
-        item();
+        command();
     }
 };
 
@@ -487,20 +483,19 @@ struct UnknownCommandSequence<char>: std::runtime_error {
     }
 
 };
-template <typename T>
 struct CommandReader {
 
     /**
      * All defined commands
      */
-    Trie<T> commands_;
+    CommandSequences commands_;
 
     /**
      * Default command
      *
      * It's called when no command matches the input sequence
      */
-    typename Trie<T>::Item default_;
+    typename CommandSequences::Command default_;
 
     /** Data source */
     std::istream &input_;
@@ -518,8 +513,8 @@ struct CommandReader {
         commands_.insert(key, f);
     }
 
-    template <typename F>
-    void add_command(const T &key, F &&f) {
+    template <typename CharType, typename F>
+    void add_command(const CharType &key, F &&f) {
         commands_.insert(key, f);
     }
 
@@ -532,13 +527,9 @@ struct CommandReader {
     void start_reading() { should_stop_ = false; }
     char current_char() const { return curchar_; }
 
-    void run_command(const Trie<T> &t) {
-        // current character does not have associated command
-    }
-
     void read_and_execute() {
 
-        const Trie<T> *t = &commands_;
+        const CommandSequences *t = &commands_;
 
         while (!should_stop_) {
 
@@ -550,14 +541,14 @@ struct CommandReader {
             }
             // XXX: THIS is a total bullshit, you should rewrite it
             if (!t->contains(curchar_)) {
-                if (!t->item) {
+                if (!t->command) {
                     if (default_) {
                         default_();
                     } else {
                         throw std::runtime_error("Unknown command: " + std::to_string((int)curchar_));
                     }
                 } else {
-                    t->item();
+                    t->command();
                     input_.unget();
                 }
 
@@ -565,8 +556,8 @@ struct CommandReader {
             } else {
                 t = &(*t)[curchar_];//t->operator[](curchar_);
 
-                if (t->empty() && t->item) {
-                    t->item();
+                if (t->empty() && t->command) {
+                    t->command();
                     t = &commands_;
                 }
             }
@@ -593,7 +584,7 @@ class Readline {
         Prompt prompter_{};
         Completion completion_{};
 
-        CommandReader<char> command_reader_{input_.get()};
+        CommandReader command_reader_{input_.get()};
 
     protected:
         void do_write_char() {
