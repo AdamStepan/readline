@@ -11,6 +11,7 @@
 #include <deque>
 #include <iterator>
 #include <memory>
+#include <vector>
 
 struct EscapeSequence {
     static const std::string ClearTheScreen;
@@ -449,40 +450,7 @@ struct CommandSequences {
     }
 };
 
-#include <vector>
 
-template <typename T>
-struct UnknownCommandSequence: std::runtime_error {
-
-    UnknownCommandSequence(const std::vector<T> &s):
-        std::runtime_error{mkmsg(s)} {}
-
-    virtual std::string mkmsg(const std::vector<T> &s) = 0;
-};
-
-template <>
-struct UnknownCommandSequence<char>: std::runtime_error {
-
-    UnknownCommandSequence(const std::vector<char> &s):
-        std::runtime_error{mkmsg(s)} {}
-
-    std::string mkmsg(const std::vector<char> &s) {
-
-        std::string msg{"Unknown command sequence: ["};
-
-        for (auto &&it = s.cbegin(); it != s.cend(); it++) {
-            msg += std::to_string(static_cast<int>(*it));
-            if (std::next(it) != s.cend()) {
-                msg += ", ";
-                std::prev(it);
-            }
-        }
-        msg += "]";
-
-        return msg;
-    }
-
-};
 struct CommandReader {
 
     /**
