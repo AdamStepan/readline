@@ -382,28 +382,35 @@ template <typename T>
 struct Trie {
 
     using Key = T;
+    using SubTrie = std::unique_ptr<Trie<T>>;
     using Item = std::function<void(void)>;
 
-    std::unordered_map<Key, Trie> data;
+    std::unordered_map<Key, SubTrie> data;
     Item item;
 
     template <typename It>
-    bool insert(It begin, It end, const Item &i) {
+    bool insert(It begin, It end, const Item &item) {
 
         if (begin == end) {
             return false;
         }
 
-        auto &&inserted = data[*begin].insert(std::next(begin), end, i);
+        auto &&subtrie = data[*begin];
+
+        if (!subtrie) {
+            subtrie.reset(new Trie<T>());
+        }
+
+        auto &&inserted = subtrie->insert(std::next(begin), end, item);
 
         if (!inserted) {
-            data[*begin].item = i;
+            data[*begin]->item = item;
         }
 
         return true;
     }
 
-    void insert(const std::initializer_list<T> &c, const Item &i) {
+    void insert(const std::initializer_list<const T> &c, const Item &i) {
         insert(std::begin(c), std::end(c), i);
     }
 
@@ -421,15 +428,17 @@ struct Trie {
     }
 
     const Trie &operator[](const Key &k) const {
-        return data.at(k);
+        return *data.at(k);
     }
 
     const Trie &operator[](const std::initializer_list<Key> &keys) const {
-        const Trie *t = this;
-        for (auto &&k: keys) {
-            t = &t->data.at(k);
+        const Trie *subtrie = this;
+
+        for (auto &&key: keys) {
+            subtrie = subtrie->data.at(key).get();
         }
-        return *t;
+
+        return *subtrie;
     }
 
     void operator() () const {
@@ -485,7 +494,7 @@ struct CommandReader {
     CommandReader(std::istream &is): input_{is} {}
 
     template <typename F>
-    void add_command(const std::initializer_list<T> &key, F &&f) {
+    void add_command(const std::initializer_list<const T> &key, F &&f) {
         commands_.insert(key, f);
     }
 
