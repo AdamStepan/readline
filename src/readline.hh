@@ -497,7 +497,24 @@ struct CommandReader {
 
     void read_and_execute() {
 
-        const CommandSequences *t = &commands_;
+        const CommandSequences *sequence = &commands_;
+
+        auto reset_sequence = [&] {
+            sequence = &commands_;
+        };
+
+        auto run_default = [&] {
+            if (default_) {
+                default_();
+            } else {
+                throw std::runtime_error("Unknown command: " + std::to_string((int)curchar_));
+            }
+        };
+
+        auto is_longest_sequence = [&] {
+            return sequence->empty() && // sequence doesn't have subsequences
+                   sequence->command;   // sequence has assigned command
+        };
 
         while (!should_stop_) {
 
@@ -507,26 +524,25 @@ struct CommandReader {
                 should_stop_ = true;
                 break;
             }
-            // XXX: THIS is a total bullshit, you should rewrite it
-            if (!t->contains(curchar_)) {
-                if (!t->command) {
-                    if (default_) {
-                        default_();
-                    } else {
-                        throw std::runtime_error("Unknown command: " + std::to_string((int)curchar_));
-                    }
+
+            if (!sequence->contains(curchar_)) {
+
+                if (!sequence->command) {
+                    run_default();
                 } else {
-                    t->command();
+                    sequence->command();
                     input_.unget();
                 }
 
-                t = &commands_;
-            } else {
-                t = &(*t)[curchar_];//t->operator[](curchar_);
+                reset_sequence();
 
-                if (t->empty() && t->command) {
-                    t->command();
-                    t = &commands_;
+            } else {
+
+                sequence = &(*sequence)[curchar_];
+
+                if (is_longest_sequence()) {
+                    sequence->command();
+                    reset_sequence();
                 }
             }
         }
