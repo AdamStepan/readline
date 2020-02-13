@@ -13,21 +13,46 @@
 #include <memory>
 #include <vector>
 
-struct EscapeSequence {
+/** This class contains terminal control sequences
+ *
+ * Some of them are paremetrized, so they must be formated before use
+ *
+ * For more info check: https://www.gnu.org/software/screen/manual/html_node/Control-Sequences.html
+ */
+struct ControlSequences {
     static const std::string ClearTheScreen;
     static const std::string MoveCursorBackward;
     static const std::string MoveCursorForward;
     static const std::string MoveCursorHorizonalAbsolute;
     static const std::string ClearTheLine;
+    static const std::string SetGraphicRendition;
 };
 
 using namespace std::literals;
 
-const std::string EscapeSequence::ClearTheScreen{"\x1b[2J"s};
-const std::string EscapeSequence::ClearTheLine{"\x1b[K"s}; // from the active pos to end of the line
-const std::string EscapeSequence::MoveCursorBackward{"\x1b[1D"s};
-const std::string EscapeSequence::MoveCursorForward{"\x1b[{N}C"s};
-const std::string EscapeSequence::MoveCursorHorizonalAbsolute{"\x1b[{N}G"s};
+const std::string ControlSequences::ClearTheScreen{"\x1b[2J"s};
+const std::string ControlSequences::ClearTheLine{"\x1b[K"s}; // from the active pos to end of the line
+const std::string ControlSequences::MoveCursorBackward{"\x1b[1D"s};
+const std::string ControlSequences::MoveCursorForward{"\x1b[{N}C"s};
+const std::string ControlSequences::MoveCursorHorizonalAbsolute{"\x1b[{N}G"s};
+const std::string ControlSequences::SetGraphicRendition{"\x1b[{}m"};
+
+/** Select Graphic Rendition sets display attributes.
+ *
+ * Several attributes can be set in the same sequence, separated by semicolons.
+ * Each display attribute remains in effect until a following occurrence of
+ * SGR resets it.
+ */
+enum class SelectGraphicRendition {
+    /** Unset all attributes */
+    Normal = 0,
+    /** Bold */
+    Bold = 1,
+    /** Underline */
+    Underline = 4,
+    /** Swap foreground and background colors */
+    Reverse = 7,
+};
 
 namespace {
     termios get_terminal_attr(void) {
@@ -155,22 +180,31 @@ class Terminal {
         }
 
         void move_cursor_forward(size_t n) const {
-            auto sequence{EscapeSequence::MoveCursorForward};
+            auto sequence{ControlSequences::MoveCursorForward};
             sequence.replace(sequence.find("{N}"s), 3, std::to_string(n));
 
             write_sequence(sequence);
         }
 
         void move_cursor_backward() const {
-            write_sequence(EscapeSequence::MoveCursorBackward);
+            write_sequence(ControlSequences::MoveCursorBackward);
         }
 
         void clear_the_screen() const {
-            write_sequence(EscapeSequence::ClearTheScreen);
+            write_sequence(ControlSequences::ClearTheScreen);
+        }
+
+        void reverse_graphics() const {
+
+            auto sequence{ControlSequences::SetGraphicRendition};
+            auto param = static_cast<int>(SelectGraphicRendition::Reverse);
+
+            sequence.replace(sequence.find("{}"s), 2, std::to_string(param));
+            write_sequence(sequence);
         }
 
         void clear_the_line() const {
-            write_sequence(EscapeSequence::ClearTheLine);
+            write_sequence(ControlSequences::ClearTheLine);
         }
 
         void move_cursor_horizontal_absolute() const {
@@ -178,7 +212,7 @@ class Terminal {
         }
 
         void move_cursor_horizontal_absolute(size_t n) const {
-            auto sequence{EscapeSequence::MoveCursorHorizonalAbsolute};
+            auto sequence{ControlSequences::MoveCursorHorizonalAbsolute};
             sequence.replace(sequence.find("{N}"s), 3, std::to_string(n));
 
             write_sequence(sequence);
