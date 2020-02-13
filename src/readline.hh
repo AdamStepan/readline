@@ -45,11 +45,14 @@ namespace {
     }
 }
 
+/** This class represent terminal settings */
 class TerminalSettings {
     private:
+        /** Terminal settings captured before any modification */
         termios original_{get_terminal_attr()};
-        termios current_{get_terminal_attr()};
 
+        /** Modified terminal settings */
+        termios current_{get_terminal_attr()};
     public:
         TerminalSettings() {}
 
@@ -58,39 +61,63 @@ class TerminalSettings {
             current_ = s.current_;
         }
 
+        /** Apply changed terminal settings */
         void apply() const {
             set_terminal_attr(current_);
         }
 
+        /** Reset terminal settings to the original state */
         void reset() const {
             set_terminal_attr(original_);
         }
 
+        /** Echo input characters */
         TerminalSettings &set_echo(bool to) {
             current_.c_lflag &= to ? ECHO : ~ECHO;
             return *this;
         }
 
+        /** Set canonical mode
+         *
+         * In Canonical mode:
+         * - Input is made available line by line
+         * - Line editing is enabled
+         * - The maximum line length is limited
+         *
+         * In noncanonical mode:
+         * - input is available immediately
+         * - no input processing is avaiable
+         */
         TerminalSettings &set_canonical(bool to) {
             current_.c_lflag &= to ? ICANON : ~ICANON;
             return *this;
         }
 
+        /** Minimum number of characters for noncanonical read */
         TerminalSettings &set_min_chars_for_non_canonical_read(size_t n) {
             current_.c_cc[VMIN] = n;
             return *this;
         }
 
+        /** Timeout in deciseconds (1/10s) for noncanonical read */
         TerminalSettings &set_timeout_for_non_canonical_read(size_t n) {
             current_.c_cc[VTIME] = n;
             return *this;
         }
 
+        /** When any of INTR (ctrl+c), QUIT (ctrl+q), SUSP (ctrl+z) are received,
+         * generate correspending signal
+         */
         TerminalSettings &set_ctrlc_ctrlz_as_characters(bool to) {
             current_.c_lflag &= to ? ~ISIG : ISIG;
             return *this;
         }
 
+        /** Set implementation-defined output processing
+         *
+         *  If OPOST is set output characters are post-processed as indicated by
+         *  the remaining flags otherwise characters are transmitted without change.
+         **/
         TerminalSettings &set_output_processing(bool to) {
             current_.c_oflag &= to ? ~OPOST : OPOST;
             return *this;
