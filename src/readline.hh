@@ -231,9 +231,15 @@ class Terminal {
         }
 };
 
+/** This class represents storage of inputs */
 class History {
+    /** File where should be history persisted */
     std::shared_ptr<std::ostream> history_file_{};
+
+    /** Maximum input entries */
     size_t max_entries_{1024};
+
+    /** Stored input entries */
     std::deque<std::string> entries_{};
 
     void write_to_file() {
