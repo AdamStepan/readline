@@ -150,10 +150,18 @@ class TerminalSettings {
 
 };
 
+/** This class represents software terminal
+ *
+ * It provides functions like moving the cursor and graphics rendering
+ */
 class Terminal {
     private:
         TerminalSettings settings_;
 
+        /** Writes control sequence to the stdin
+         *
+         * It's expected that terminal will read it and interpret the sequence
+         */
         static void write_sequence(const std::string &sequence) {
             ssize_t written = write(STDOUT_FILENO,
                                     sequence.c_str(),
@@ -175,10 +183,12 @@ class Terminal {
         Terminal(const TerminalSettings &settings): settings_{settings} {}
         Terminal(const Terminal &t): settings_{t.settings_} {}
 
+        /** Moves cursor one cell to the right */
         void move_cursor_forward() const {
             return move_cursor_forward(1);
         }
 
+        /** Moves cursor n cells to the right */
         void move_cursor_forward(size_t n) const {
             auto sequence{ControlSequences::MoveCursorForward};
             sequence.replace(sequence.find("{N}"s), 3, std::to_string(n));
@@ -186,14 +196,17 @@ class Terminal {
             write_sequence(sequence);
         }
 
+        /** Moves cursor one cell to the left */
         void move_cursor_backward() const {
             write_sequence(ControlSequences::MoveCursorBackward);
         }
 
+        /** Clear the entire screen */
         void clear_the_screen() const {
             write_sequence(ControlSequences::ClearTheScreen);
         }
 
+        /** Reverse graphics using graphic rendetion */
         void reverse_graphics() const {
 
             auto sequence{ControlSequences::SetGraphicRendition};
@@ -203,14 +216,17 @@ class Terminal {
             write_sequence(sequence);
         }
 
+        /** Clear the line from the cursor to the end of the line */
         void clear_the_line() const {
             write_sequence(ControlSequences::ClearTheLine);
         }
 
+        /** Move cursor to the begining of the current line */
         void move_cursor_horizontal_absolute() const {
             move_cursor_horizontal_absolute(0);
         }
 
+        /** Move cursor to the nth position of the current line */
         void move_cursor_horizontal_absolute(size_t n) const {
             auto sequence{ControlSequences::MoveCursorHorizonalAbsolute};
             sequence.replace(sequence.find("{N}"s), 3, std::to_string(n));
